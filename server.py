@@ -2,13 +2,21 @@
 
 import socketserver as ss
 import json
+import pickle
 
+from encrypter import *
+from Crypto import Random
+import rsa
 
 class ServerThreader(ss.ThreadingMixIn, ss.TCPServer):
 	pass
 
 
 class Server(ss.StreamRequestHandler):
+	
+	
+	(serverPublicKey, serverPrivateKey) = rsa.newkeys(1600, poolsize=2)
+	
 
 #	key: address ... val: serverobject
 	clients = dict()
@@ -16,8 +24,12 @@ class Server(ss.StreamRequestHandler):
 #	key: name ... val: address
 	usernames = dict()
 
+# key:address.... val:pKey
+	publicKeys = dict()
+
 	#	key: name ... val: [messageDict]	
 	offlineMessages = dict()
+	
 
 	def createMessageDict(self, source, data):
 		messageDictionary = {
@@ -26,61 +38,95 @@ class Server(ss.StreamRequestHandler):
 		}
 
 		return messageDictionary
-
+	
+	def dumpAndEncodeDict(self, messageDictionary):
+		messageJson = json.dumps(messageDictionary)
+		encoded = messageJson.encode()
+		
+		return encoded
+		
+	def encryptMessageAndSend(self, thisClient, encodedMessage, destAddr):
+		
+		pubKey = self.publicKeys[destAddr]
+		
+		encryptedMessage = rsa.encrypt(encodedMessage, pubKey)
+		
+		print(encodedMessage)
+		
+		thisClient.request.sendall(encryptedMessage)
+		
 	def sendEveryoneMessage(self, messageDictionary, myAddr):
 		
-		
-		
-		messageJson = json.dumps(messageDictionary)
-		
-		for addr, client in self.clients.items():		
-		
+		for addr, client in self.clients.items():	
+						
 			if (addr != myAddr):
-				client.request.sendall(messageJson.encode())
-
-
+				
+				encoded = self.dumpAndEncodeDict(messageDictionary)
+				
+				self.encryptMessageAndSend(client, encoded, addr)
+				
 	def sendExternalMessage(self, destAddr, messageDictionary):
 
-
-
-		messageJson = json.dumps(messageDictionary)
+		encoded = self.dumpAndEncodeDict(messageDictionary)
+		
 		reciever = self.clients[destAddr]
-		reciever.request.sendall(messageJson.encode())
 		
-	def sendDictionary(self, dict):
-		thisJson = json.dumps(dict)
+		self.encryptMessageAndSend(reciever, encoded, destAddr)
+	
+	def getMyAddr(self):
 		
-		
-		self.request.sendall(thisJson.encode())
-		
-		
+		peerName = self.request.getpeername()
+		myAddr = peerName[1]
+		return myAddr
 
 	def systemResponse(self, message):
 		messageDictionary = {
 			"from" : "SERVER",
 			"message" : message
 		}
-		self.sendDictionary(messageDictionary)
+		encodedMessage = self.dumpAndEncodeDict(messageDictionary)
 		
+		myAddr = self.getMyAddr()
+		
+		
+		self.encryptMessageAndSend(self, encodedMessage, myAddr)
 
 
 	def remove(self, connectionAddr, name):
 		res1 = self.clients.pop(connectionAddr, None)
 		res2 = self.usernames.pop(name, None)
-
-
+		
 		messageDictionary = {
 			"from" : "SERVERTERM",
 			"message" : "Have a great day!"
 		}
-		self.sendDictionary(messageDictionary)
-
+		encodedMessage = self.dumpAndEncodeDict(messageDictionary)
+		
+		myAddr = self.getMyAddr()
+		
+		self.encryptMessageAndSend(self, encodedMessage, myAddr)
+	
+	
+	def sendServerKey(self):
+		
+		
+		pickledPublicKey = pickle.dumps(self.serverPublicKey,0).decode()
+		
+		messageDictionary = {
+			"destName": "SERVERPUBLICKEY",
+			"message": pickledPublicKey
+		}
+		
+		send = self.dumpAndEncodeDict(messageDictionary)
+		
+		
+		self.request.sendall(send)
+		
+		
 	def handle(self):
 		while True:
 
-			peerName = self.request.getpeername()
-			fromAddr = peerName[1]
-
+			fromAddr = self.getMyAddr()
 
 			self.data = self.request.recv(1024)
 
@@ -89,17 +135,43 @@ class Server(ss.StreamRequestHandler):
 
 			message = jsonData["message"]
 			dest = jsonData["destName"]
+			
 
 
 			if (dest.startswith("CONNECTEDUSERNAME")):
-
-				name = message
-
+				#wants to join
+				
+				
+				try:
+					
+					split = message.split(sep="-")
+					
+					name = split[0]
+					
+					publicKeyPickledDecoded = split[1]
+					
+				except Exception as e:
+					print("NAme pickle split issue")
+					print(e)
+					continue
+				
+				try:
+					
+					publicKeyPickled = publicKeyPickledDecoded.encode()
+					publicKey = pickle.loads(publicKeyPickled)
+					
+				except Exception as e:
+					print("public key depickle issue")
+					print(e)
+					continue
+				
 				try:
 						# add self to clients list
 						self.clients[fromAddr] = self
 						# add self to usernames list
 						self.usernames[name] = fromAddr
+						
+						self.publicKeys[fromAddr] = publicKey
 
 						print(fromAddr, "with username,", name , "just connected to the server.")
 
@@ -110,18 +182,31 @@ class Server(ss.StreamRequestHandler):
 				response = "Welcome to ClassChat, " + name + ".\n\tTo send a message use the format \"USERNAME-MESSAGE\" " + "\n\t Type GETUSERS to view all users."
 				
 				try:
-					offline = self.offlineMessages.pop(name)
+					offlineArray = self.offlineMessages.pop(name)
 					
-					self.sendDictionary({ "messages" : offline})
+					offlineResponse = "Welcome to ClassChat, " + name + ".\n\tTo send a message use the format \"USERNAME-MESSAGE\" " + "\n\t Type GETUSERS to view all users. \n\t Type LEAVE to leave. \n\n Here's what you missed while you were gone..... "
+					
+					offlineMessage = {
+						"from" : "SERVER",
+						"message" : offlineResponse
+					}
+					
+					offlineArray.insert(0, offlineMessage)
 					
 					
-						
+					encodedMessage = self.dumpAndEncodeDict({ "messages" : offlineArray})
+					
+					myAddr = self.getMyAddr()
+					
+					self.encryptMessageAndSend(self, encodedMessage, myAddr)
 					
 				except KeyError as e:
+					print("No offline messages for", e)
 					self.systemResponse(response)
 
 			elif(dest == "LEAVE"):
-
+				#wants to leave
+				
 				myAddr = fromAddr
 				myName = list(self.usernames.keys())[list(self.usernames.values()).index(fromAddr)]
 
@@ -130,6 +215,8 @@ class Server(ss.StreamRequestHandler):
 				self.remove(myAddr, myName)
 
 			elif (dest.startswith("GETUSERS")):
+				#wants the list of users
+				
 				message = ""
 				self.usernames.keys()
 				for key in sorted(self.usernames.keys()):
@@ -138,6 +225,8 @@ class Server(ss.StreamRequestHandler):
 				self.systemResponse(message)
 			
 			elif (dest.startswith("EVERYONE")):
+				#sending a group message
+				
 				myName = list(self.usernames.keys())[list(self.usernames.values()).index(fromAddr)]
 				messageDict = self.createMessageDict(myName, message)
 				
@@ -147,7 +236,7 @@ class Server(ss.StreamRequestHandler):
 				self.systemResponse(("Sent message to " + dest))
 
 			else:
-				#actual message
+				#sending a direct message
 				myName = list(self.usernames.keys())[list(self.usernames.values()).index(fromAddr)]
 				
 				messageDict = self.createMessageDict(myName, message)
@@ -166,33 +255,25 @@ class Server(ss.StreamRequestHandler):
 					continue
 
 
-
-
-
 				print("Message sent: {} -> {}".format(myName, dest))
-
-
 
 				self.sendExternalMessage(destAddr, messageDict)
 
 				self.systemResponse(("Sent message to " + dest))
 
-
-
-
-#				print("{} wrote: {}".format(self.client_address[0], self.data.decode() ))
-
-
-
+def main():
+	
+	
+	host = ""
+	port = 9002
+	thisServerThreader = ServerThreader((host,port), Server)
+	
+	print("Started: " , thisServerThreader)
+	
+	thisServerThreader.serve_forever()
 
 if __name__ == '__main__':
+	main()
 
 
-	host = ""
-	port = 9003
-	thisServerThreader = ServerThreader((host,port), Server)
-
-	print("Started: " , thisServerThreader)
-
-	thisServerThreader.serve_forever()
 	

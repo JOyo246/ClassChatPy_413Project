@@ -5,9 +5,55 @@ import sys
 import select
 import json
 
+import pickle
+import rsa
+
+
+
+
+
+
 def client(name, host, port):
 	
+	
+	def initalServerConnection(host, port):
+		s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+		s.connect((host, port))
 		
+		return s
+		
+
+	
+	def giveServerCredentials(name):
+		
+		(publicKey, privateKey) = createKeys()
+		
+		pickledPublicKey = pickle.dumps(publicKey,0).decode()
+		
+		messageDictionary = {
+			"destName": "CONNECTEDUSERNAME",
+			"message": name + "-" + pickledPublicKey
+		}
+		
+		
+		messageJson = json.dumps(messageDictionary)
+		
+		
+		serverConnection.send(messageJson.encode())
+		
+		return privateKey
+		
+		
+		
+	def createKeys():
+		
+		(public, private) = rsa.newkeys(1600, poolsize=2)
+		
+		return (public, private)
+	
+	def decryptData(data, private):
+		return rsa.decrypt(data, private)
+	
 	def askServer(message):
 		messageDictionary = {
 			"destName": message,
@@ -17,46 +63,37 @@ def client(name, host, port):
 		messageJson = json.dumps(messageDictionary)
 		
 		
-		s.send(messageJson.encode())
+		serverConnection.send(messageJson.encode())
+		
+		
+	serverConnection = initalServerConnection(host, port)
+
+
+	privateKey = giveServerCredentials(name)
 	
-	s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-	s.connect((host, port))
-	
-	messageDictionary = {
-		"destName": "CONNECTEDUSERNAME",
-		"message": name
-	}
-	messageJson = json.dumps(messageDictionary)
-	
-	
-	s.send(messageJson.encode())
-	
-	
-#	m ='{"id": 2, "name": "abc"}'
-#	message = input("What do you want to say? ") 
-	
-#	while message.lower().strip() != 'kill':
-#		s.send(message.encode())
-	inputs = [s, sys.stdin]
-	outputs = []
+
+	inputs = [serverConnection, sys.stdin]
 	
 	kill = False
 	
+	
+	
 	while kill != True:
 		
-		# Wait for at least one of the sockets to be ready for processing
-#		print(sys.stderr, '\nwaiting for the next event')
 		readable, _, _ = select.select(inputs, [], [])
 		
 		for reader in readable:
 
-			if reader is s:
+			if reader is serverConnection:
 				
 					data = reader.recv(1000)
 					
 					if data:
 						
-						jsonData = json.loads(data.decode())
+						
+						decryptedJson = decryptData(data, privateKey)
+
+						jsonData = json.loads(decryptedJson.decode())
 						
 						try:
 							
@@ -77,12 +114,7 @@ def client(name, host, port):
 				
 			else:
 				
-#				sys.stdout
-				
 				inputStripped = sys.stdin.readline().rstrip()
-				
-#				ask server for user list
-
 				
 				if (inputStripped.startswith("GETUSERS")):
 					
@@ -112,23 +144,19 @@ def client(name, host, port):
 					messageJson = json.dumps(messageDictionary)
 					
 					
-					s.send(messageJson.encode())
+					serverConnection.send(messageJson.encode())
 					
 
-#		for writer in writable:
-#			#process writes
-#			print("writeable loop")
-#			
-#		for exception in exceptional:
-#			print("error")
-#			#process errors
-#	
-	s.close()
-	
+	serverConnection.close()
+
+def main():
+	name = input("What is your name: ")
+	host = ''
+	port = 9002
+	client(name, host, port)
 	
 if __name__ == '__main__':
 	
-	name = input("What is your name: ")
-	host = ''
-	port = 9003
-	client(name, host, port)
+	
+	main()
+	

@@ -3,9 +3,6 @@
 import socketserver as ss
 import json
 import pickle
-
-from encrypter import *
-from Crypto import Random
 import rsa
 
 class ServerThreader(ss.ThreadingMixIn, ss.TCPServer):
@@ -265,7 +262,7 @@ def main():
 	
 	
 	host = ""
-	port = 9002
+	port = 9003
 	thisServerThreader = ServerThreader((host,port), Server)
 	
 	print("Started: " , thisServerThreader)

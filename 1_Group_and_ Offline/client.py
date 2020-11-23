@@ -5,55 +5,9 @@ import sys
 import select
 import json
 
-import pickle
-import rsa
-
-
-
-
-
-
 def client(name, host, port):
 	
-	
-	def initalServerConnection(host, port):
-		s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-		s.connect((host, port))
 		
-		return s
-		
-
-	
-	def giveServerCredentials(name):
-		
-		(publicKey, privateKey) = createKeys()
-		
-		pickledPublicKey = pickle.dumps(publicKey,0).decode()
-		
-		messageDictionary = {
-			"destName": "CONNECTEDUSERNAME",
-			"message": name + "-" + pickledPublicKey
-		}
-		
-		
-		messageJson = json.dumps(messageDictionary)
-		
-		
-		serverConnection.send(messageJson.encode())
-		
-		return privateKey
-		
-		
-		
-	def createKeys():
-		
-		(public, private) = rsa.newkeys(1600, poolsize=2)
-		
-		return (public, private)
-	
-	def decryptData(data, private):
-		return rsa.decrypt(data, private)
-	
 	def askServer(message):
 		messageDictionary = {
 			"destName": message,
@@ -63,20 +17,23 @@ def client(name, host, port):
 		messageJson = json.dumps(messageDictionary)
 		
 		
-		serverConnection.send(messageJson.encode())
-		
-		
-	serverConnection = initalServerConnection(host, port)
-
-
-	privateKey = giveServerCredentials(name)
+		s.send(messageJson.encode())
 	
-
-	inputs = [serverConnection, sys.stdin]
+	s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+	s.connect((host, port))
+	
+	messageDictionary = {
+		"destName": "CONNECTEDUSERNAME",
+		"message": name
+	}
+	messageJson = json.dumps(messageDictionary)
+	
+	
+	s.send(messageJson.encode())
+	
+	inputs = [s, sys.stdin]
 	
 	kill = False
-	
-	
 	
 	while kill != True:
 		
@@ -84,16 +41,13 @@ def client(name, host, port):
 		
 		for reader in readable:
 
-			if reader is serverConnection:
+			if reader is s:
 				
 					data = reader.recv(1000)
 					
 					if data:
 						
-						
-						decryptedJson = decryptData(data, privateKey)
-
-						jsonData = json.loads(decryptedJson.decode())
+						jsonData = json.loads(data.decode())
 						
 						try:
 							
@@ -113,9 +67,10 @@ def client(name, host, port):
 								kill = True
 				
 			else:
+#				must be keyboard input 
 				
 				inputStripped = sys.stdin.readline().rstrip()
-				
+								
 				if (inputStripped.startswith("GETUSERS")):
 					
 					askServer("GETUSERS")
@@ -144,19 +99,15 @@ def client(name, host, port):
 					messageJson = json.dumps(messageDictionary)
 					
 					
-					serverConnection.send(messageJson.encode())
+					s.send(messageJson.encode())
 					
-
-	serverConnection.close()
-
-def main():
-	name = input("What is your name: ")
-	host = ''
-	port = 9002
-	client(name, host, port)
+	s.close()
+	
 	
 if __name__ == '__main__':
 	
 	
-	main()
-	
+	name = input("What is your name?\n Please ensure to not use the \"-\" key and to use a unique name.\nName: ")
+	host = ''
+	port = 9003
+	client(name, host, port)

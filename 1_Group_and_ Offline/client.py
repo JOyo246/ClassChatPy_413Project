@@ -31,21 +31,12 @@ def client(name, host, port):
 	
 	s.send(messageJson.encode())
 	
-	
-#	m ='{"id": 2, "name": "abc"}'
-#	message = input("What do you want to say? ") 
-	
-#	while message.lower().strip() != 'kill':
-#		s.send(message.encode())
 	inputs = [s, sys.stdin]
-	outputs = []
 	
 	kill = False
 	
 	while kill != True:
 		
-		# Wait for at least one of the sockets to be ready for processing
-#		print(sys.stderr, '\nwaiting for the next event')
 		readable, _, _ = select.select(inputs, [], [])
 		
 		for reader in readable:
@@ -76,14 +67,10 @@ def client(name, host, port):
 								kill = True
 				
 			else:
-				
-#				sys.stdout
+#				must be keyboard input 
 				
 				inputStripped = sys.stdin.readline().rstrip()
-				
-#				ask server for user list
-
-				
+								
 				if (inputStripped.startswith("GETUSERS")):
 					
 					askServer("GETUSERS")
@@ -114,21 +101,13 @@ def client(name, host, port):
 					
 					s.send(messageJson.encode())
 					
-
-#		for writer in writable:
-#			#process writes
-#			print("writeable loop")
-#			
-#		for exception in exceptional:
-#			print("error")
-#			#process errors
-#	
 	s.close()
 	
 	
 if __name__ == '__main__':
 	
-	name = input("What is your name: ")
+	
+	name = input("What is your name?\n Please ensure to not use the \"-\" key and to use a unique name.\nName: ")
 	host = ''
 	port = 9003
 	client(name, host, port)
